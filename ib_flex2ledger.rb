@@ -49,6 +49,40 @@ def fx_trade_to_ledger(trade, options)
   puts ""
 end
 
+def group_cash_transactions(cash_transactions)
+  cash_transactions.reduce({}) do |hash, transaction|
+    key = {conid: transaction["conid"], date: transaction["dateTime"]}
+
+    if hash[key].nil? then
+      hash[key] = [transaction]
+    else
+      hash[key] << transaction
+    end
+
+    hash
+  end
+end
+
+def classify_cash_transactions_group(transaction_group)
+  grouped = transaction_group.group_by {|transaction| transaction["type"]}
+
+  results = []
+
+  if grouped.fetch("Dividends",[]).length == 1 and grouped.fetch("Withholding Tax",[]).length == 1 then
+    results << {type: :dividend_with_withholding, dividend: grouped["Dividends"].first, tax: grouped["Withholding Tax"].first}
+    grouped.delete("Dividends")
+    grouped.delete("Withholding Tax")
+  end
+
+  grouped.each do |key, transactions|
+    transactions.each do |transaction|
+      results << {type: key.to_sym, transaction: transaction}
+    end
+  end
+
+  results
+end
+
 command :parse_trades do |c|
   c.syntax = 'ib_flex2ledger parse-transactions [options]'
   c.summary = 'Parse trades and output ledger transactions'
@@ -82,11 +116,73 @@ command :parse_trades do |c|
       end
     end
 
-    cash_transactions = statement.xpath("CashTransactions/CashTransaction")
-    cash_transactions.sort_by {|tx| DateTime.parse(tx["dateTime"])}.each do |transaction|
-      puts "#{transaction["reportDate"]} * #{transaction["symbol"]}"
-      puts "  ; #{transaction["description"]}"
-      puts ""
+    cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction"))
+    cash_transactions.sort_by {|key, _| key[:date]}.each do |key, transactions|
+      classify_cash_transactions_group(transactions).each do |transaction|
+        case transaction[:type]
+        when :dividend_with_withholding
+          dividend = transaction[:dividend]
+          tax = transaction[:tax]
+
+          puts "#{dividend["reportDate"]} * #{dividend["symbol"]}"
+          puts "  ; #{dividend["description"]}"
+          puts "  #{options.dividends_account}  #{dividend["currency"]} #{-dividend["amount"].to_f}"
+          puts "  #{options.withholdings_account}  #{tax["currency"]} #{-tax["amount"].to_f}"
+          puts "  #{options.cash_account}"
+          puts ""
+        else
+          transaction = transaction[:transaction]
+          amount = transaction["amount"].to_f
+
+          puts "#{transaction["reportDate"]} * Interactive Brokers"
+          puts "  ; #{transaction["description"]}"
+          puts "  ; cash_transaction_type: #{transaction["type"]}"
+          puts "  #{options.cash_account}  #{transaction["currency"]} #{transaction["amount"].to_f}"
+          if amount < 0 then
+            puts "  #{options.fees_account}"
+          else
+            puts "  UNKNOWN_ACCOUNT"
+          end
+          puts ""
+        end
+      end
+    end
+  end
+end
+
+command :print_positions do |c|
+  c.syntax = 'ib_flex2ledger print-positions [options]'
+  c.summary = 'Print current positions'
+  c.description = ''
+  c.option '--verbose', 'Include more information than just basic positions'
+  c.action do |args, options|
+    flex_report = load(args[0])
+    statement = flex_report.xpath("//FlexStatement").first
+    account_info = statement.xpath("AccountInformation").first
+    puts "Positions for #{account_info["name"]}, account #{statement["accountId"]}"
+    puts "As per #{statement["toDate"]}"
+    puts ""
+
+    assets = statement.xpath("OpenPositions/OpenPosition[@levelOfDetail='SUMMARY']")
+    assets.each do |position|
+      currency = position["currency"]
+
+      puts "#{position["symbol"]} #{position["position"]}"
+
+      if options.verbose then
+        puts " * Percent of NAV: #{position["percentOfNAV"]}%"
+        puts " * Cost basis price: #{position["openPrice"]} #{currency}"
+        puts " * M2M price: #{position["markPrice"]} #{currency}"
+        puts " * Cost basic value : #{position["costBasisMoney"]} #{currency}"
+        puts " * M2M value: #{position["positionValue"]} #{currency}"
+        puts " * M2M PnL: #{position["fifoPnlUnrealized"]} #{currency}"
+        puts ""
+      end
+    end
+
+    fx = statement.xpath("FxPositions/FxPosition[@levelOfDetail='SUMMARY']")
+    fx.each do |position|
+      puts "#{position["fxCurrency"]} #{position["quantity"]}"
     end
   end
 end

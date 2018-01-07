@@ -3,10 +3,10 @@ GEM
   specs:
     commander (4.4.3)
       highline (~> 1.7.2)
-    highline (1.7.8)
-    mini_portile2 (2.2.0)
-    nokogiri (1.8.0)
-      mini_portile2 (~> 2.2.0)
+    highline (1.7.10)
+    mini_portile2 (2.3.0)
+    nokogiri (1.8.1)
+      mini_portile2 (~> 2.3.0)
 
 PLATFORMS
   ruby
