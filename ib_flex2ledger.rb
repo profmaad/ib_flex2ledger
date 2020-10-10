@@ -92,12 +92,17 @@ command :parse_trades do |c|
   c.option '--fees-account STRING', String, 'Ledger account to be used for fees'
   c.option '--dividends-account STRING', String, 'Ledger account to be used for dividends income'
   c.option '--withholdings-account STRING', String, 'Ledger account to be used for withholding tax'
+  c.option '--interest-income-account STRING', String, 'Ledger account to be used for interest income'
+  c.option '--interest-expense-account STRING', String, 'Ledger account to be used for interest expenses'
+  c.option '--ignore-deposits-withdrawals', 'If specified, don\'t output transactions for deposits and withdrawals'
   c.action do |args, options|
     raise ArgumentError.new("--stock-account is required") if options.stock_account.nil?
     options.default :cash_account => options.stock_account,
                     :fees_account => "Expenses:Fees:Brokerage",
                     :dividends_account => "Income:Dividends",
-                    :withholdings_account => "Expenses:Taxes:US Withholding Tax"
+                    :withholdings_account => "Expenses:Taxes:US Withholding Tax",
+                    :interest_income_account => "Income:Interest",
+                    :interest_expense_account => "Expenses:Interest"
 
     flex_report = load(args[0])
     statement = flex_report.xpath("//FlexStatement").first
@@ -118,7 +123,8 @@ command :parse_trades do |c|
 
     cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction"))
     cash_transactions.sort_by {|key, _| key[:date]}.each do |key, transactions|
-      classify_cash_transactions_group(transactions).each do |transaction|
+      grouped_transactions = classify_cash_transactions_group(transactions)
+      grouped_transactions.each do |transaction|
         case transaction[:type]
         when :dividend_with_withholding
           dividend = transaction[:dividend]
@@ -129,6 +135,47 @@ command :parse_trades do |c|
           puts "  #{options.dividends_account}  #{dividend["currency"]} #{-dividend["amount"].to_f}"
           puts "  #{options.withholdings_account}  #{tax["currency"]} #{-tax["amount"].to_f}"
           puts "  #{options.cash_account}"
+          puts ""
+        when :Dividends
+          dividend = transaction[:transaction]
+
+          puts "#{dividend["reportDate"]} * #{dividend["symbol"]}"
+          puts "  ; #{dividend["description"]}"
+          puts "  #{options.dividends_account}  #{dividend["currency"]} #{-dividend["amount"].to_f}"
+          puts "  #{options.cash_account}"
+          puts ""
+        when :"Broker Interest Received"
+          transaction = transaction[:transaction]
+
+          puts "#{transaction["reportDate"]} * Interactive Brokers"
+          puts "  ; #{transaction["description"]}"
+          puts "  #{options.interest_income_account}  #{transaction["currency"]} #{-transaction["amount"].to_f}"
+          puts "  #{options.cash_account}"
+          puts ""
+        when :"Broker Interest Paid"
+          transaction = transaction[:transaction]
+
+          puts "#{transaction["reportDate"]} * Interactive Brokers"
+          puts "  ; #{transaction["description"]}"
+          puts "  #{options.interest_expense_account}  #{transaction["currency"]} #{-transaction["amount"].to_f}"
+          puts "  #{options.cash_account}"
+          puts ""
+        when :"Other Fees"
+          transaction = transaction[:transaction]
+
+          puts "#{transaction["reportDate"]} * Interactive Brokers"
+          puts "  ; #{transaction["description"]}"
+          puts "  #{options.fees_account}  #{transaction["currency"]} #{-transaction["amount"].to_f}"
+          puts "  #{options.cash_account}"
+          puts ""
+        when :"Deposits/Withdrawals"
+          next if options.ignore_deposits_withdrawals
+          transaction = transaction[:transaction]
+
+          puts "#{transaction["reportDate"]} * UNKNOWN"
+          puts "  ; #{transaction["description"]}"
+          puts "  #{options.cash_account}  #{transaction["currency"]} #{transaction["amount"].to_f}"
+          puts "  UNKNOWN_ACCOUNT"
           puts ""
         else
           transaction = transaction[:transaction]
@@ -183,6 +230,36 @@ command :print_positions do |c|
     fx = statement.xpath("FxPositions/FxPosition[@levelOfDetail='SUMMARY']")
     fx.each do |position|
       puts "#{position["fxCurrency"]} #{position["quantity"]}"
+    end
+  end
+end
+
+command :dividends_to_csv do |c|
+  c.syntax = 'ib_flex2ledger dividends-to-csv [options]'
+  c.summary = 'Parse dividends only and output csv'
+  c.description = ''
+  c.action do |args, options|
+    flex_report = load(args[0])
+    statement = flex_report.xpath("//FlexStatement").first
+    account_info = statement.xpath("AccountInformation").first
+    $stderr.puts "Dividends for #{account_info["name"]}, account #{statement["accountId"]}"
+    $stderr.puts "Period #{statement["fromDate"]} to #{statement["toDate"]}"
+
+    puts "date,symbol,amount,tax"
+
+    cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction"))
+    cash_transactions.sort_by {|key, _| key[:date]}.each do |key, transactions|
+      classify_cash_transactions_group(transactions).each do |transaction|
+        case transaction[:type]
+        when :dividend_with_withholding
+          dividend = transaction[:dividend]
+          tax = transaction[:tax]
+
+          amount_without_tax = dividend["amount"].to_f + tax["amount"].to_f
+
+          puts "#{dividend["reportDate"]},#{dividend["symbol"]},#{amount_without_tax},#{-tax["amount"].to_f}"
+        end
+      end
     end
   end
 end
