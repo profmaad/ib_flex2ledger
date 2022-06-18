@@ -28,7 +28,7 @@ end
 
 def stock_trade_to_ledger(trade, options)
   transaction_header(trade)
-  puts "  #{options.stock_account}  #{trade["symbol"]} #{trade["quantity"].to_f}"
+  puts "  #{options.stock_account}  \"#{trade["symbol"]}\" #{trade["quantity"].to_f}"
   puts "  #{options.cash_account}  #{trade["currency"]} #{trade["proceeds"].to_f}"
   fees_to_ledger(trade, options)
   puts ""
