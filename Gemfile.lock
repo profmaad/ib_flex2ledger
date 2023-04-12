@@ -4,9 +4,11 @@ GEM
     commander (4.4.3)
       highline (~> 1.7.2)
     highline (1.7.10)
-    mini_portile2 (2.3.0)
-    nokogiri (1.8.1)
-      mini_portile2 (~> 2.3.0)
+    mini_portile2 (2.8.1)
+    nokogiri (1.14.3)
+      mini_portile2 (~> 2.8.0)
+      racc (~> 1.4)
+    racc (1.6.2)
 
 PLATFORMS
   ruby
