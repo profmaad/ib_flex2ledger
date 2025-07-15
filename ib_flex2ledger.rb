@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# typed: true
 
 require 'rubygems'
 require 'nokogiri'
@@ -121,7 +122,7 @@ command :parse_trades do |c|
       end
     end
 
-    cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction"))
+    cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction[@levelOfDetail='DETAIL']"))
     cash_transactions.sort_by {|key, _| key[:date]}.each do |key, transactions|
       grouped_transactions = classify_cash_transactions_group(transactions)
       grouped_transactions.each do |transaction|
