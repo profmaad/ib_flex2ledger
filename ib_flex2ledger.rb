@@ -37,15 +37,10 @@ end
 
 def fx_trade_to_ledger(trade, options)
   base_currency, quote_currency = trade["symbol"].split('.')
-  buy_currency, sell_currency = if trade["buySell"] == "BUY" then
-                                  [base_currency, quote_currency]
-                                else
-                                  [quote_currency, base_currency]
-                                end
 
   transaction_header(trade)
-  puts "  #{options.cash_account}  #{buy_currency} #{trade["quantity"].to_f}"
-  puts "  #{options.cash_account}  #{sell_currency} #{trade["proceeds"].to_f}"
+  puts "  #{options.cash_account}  #{base_currency} #{trade["quantity"].to_f}"
+  puts "  #{options.cash_account}  #{quote_currency} #{trade["proceeds"].to_f}"
   fees_to_ledger(trade, options)
   puts ""
 end
