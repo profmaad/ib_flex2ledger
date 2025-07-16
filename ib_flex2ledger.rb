@@ -5,9 +5,11 @@ require 'rubygems'
 require 'nokogiri'
 require 'commander/import'
 require 'pp'
+require 'net/http'
+require 'uri'
 
 program :name, 'ib_flex2ledger'
-program :version, '0.0.1'
+program :version, '0.1'
 program :description, 'Parse Interactive Brokers Flex reports into ledger transactions'
 
 def load(file)
@@ -257,5 +259,57 @@ command :dividends_to_csv do |c|
         end
       end
     end
+  end
+end
+
+command :retrieve_flex do |c|
+  c.syntax = 'ib_flex2ledger retrieve-flex [options]'
+  c.summary = 'Execute a Flex query via the IBKR Flex webservice and retrieve the result'
+  c.description = 'See https://www.interactivebrokers.com/campus/ibkr-api-page/flex-web-service/ for documentation  and setup'
+  c.option '--api-token STRING', String, 'Authentication token for the IBKR Flex webservice'
+  c.option '--query-id STRING', String, 'Query ID of the Flex query to execute'
+  c.option '--wait-seconds INT', Integer, 'Seconds to sleep between executing the query and retrieving the result (default: 20s)'
+  c.action do |args, options|
+    options.default :wait_seconds => 20
+
+    raise ArgumentError.new("--api-token is required") if options.api_token.nil?
+    raise ArgumentError.new("--query-id is required") if options.query_id.nil?
+
+    STDERR.print "Executing statement generation..."
+    send_request_parameters = {
+      'v': 3,
+      't': options.api_token,
+      'q': options.query_id,
+    }
+
+    send_request_uri = URI.parse('https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest')
+    send_request_uri.query = URI.encode_www_form(send_request_parameters)
+    send_request_response = Net::HTTP.get_response(send_request_uri)
+    send_request_result = Nokogiri::XML(send_request_response.body)
+
+    unless send_request_result.xpath('//FlexStatementResponse/Status').text == 'Success' then
+      raise RuntimeError.new("Response to /SendRequest was not Success:\n#{send_request_response.body}")
+    end
+
+    reference_code = send_request_result.xpath('//FlexStatementResponse/ReferenceCode').text
+    STDERR.puts "done: #{reference_code}"
+
+    STDERR.print "Waiting #{options.wait_seconds} seconds for statement to finish generating..."
+    sleep(20)
+    STDERR.puts "done"
+
+    STDERR.print "Retrieving generated statement..."
+    get_statement_parameters = {
+      'v': 3,
+      't': options.api_token,
+      'q': reference_code,
+    }
+
+    get_statement_uri = URI.parse('https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement')
+    get_statement_uri.query = URI.encode_www_form(get_statement_parameters)
+    get_statement_response = Net::HTTP.get_response(get_statement_uri)
+
+    STDERR.puts("done")
+    puts(get_statement_response.body)
   end
 end
