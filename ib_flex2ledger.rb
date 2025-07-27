@@ -7,6 +7,7 @@ require 'commander/import'
 require 'pp'
 require 'net/http'
 require 'uri'
+require 'csv'
 
 program :name, 'ib_flex2ledger'
 program :version, '0.1'
@@ -127,8 +128,17 @@ def parse_trades_from_flex(flex_report, options)
   $stderr.puts "Trades for #{account_info["name"]}, account #{statement["accountId"]}"
   $stderr.puts "Period #{statement["fromDate"]} to #{statement["toDate"]}"
 
+  if options.new_only
+    latest_transaction_date = get_latest_transaction_date_from_hledger(options.stock_account)
+    $stderr.puts "Dropping transactions older than #{latest_transaction_date}"
+  else
+    latest_transaction_date = DateTime.new()
+  end
+
   trades = statement.xpath("Trades/Trade")
   trades.sort_by {|trade| DateTime.parse("#{trade["tradeDate"]} #{trade["tradeTime"]}")}.each do |trade|
+    next if DateTime.parse(trade["tradeDate"]) <= latest_transaction_date
+
     case trade["assetCategory"]
     when "CASH" then fx_trade_to_ledger(trade, options)
     when "STK"  then stock_trade_to_ledger(trade, options)
@@ -140,6 +150,8 @@ def parse_trades_from_flex(flex_report, options)
 
   cash_transactions = group_cash_transactions(statement.xpath("CashTransactions/CashTransaction[@levelOfDetail='DETAIL']"))
   cash_transactions.sort_by {|key, _| key[:date]}.each do |key, transactions|
+    next if DateTime.parse(key[:date]) <= latest_transaction_date
+
     grouped_transactions = classify_cash_transactions_group(transactions)
     grouped_transactions.each do |transaction|
       case transaction[:type]
@@ -213,6 +225,16 @@ def parse_trades_from_flex(flex_report, options)
   end
 end
 
+def get_latest_transaction_date_from_hledger(stock_account)
+  begin
+    transactions_csv = %x[hledger aregister -O csv --date2 '#{stock_account}']
+    transactions = CSV.parse(transactions_csv, headers:true)
+    return DateTime.parse(transactions[-1]['date'])
+  rescue
+    return DateTime.new()
+  end 
+end
+
 command :parse_trades do |c|
   c.syntax = 'ib_flex2ledger parse-transactions [options]'
   c.summary = 'Parse trades and output ledger transactions'
@@ -225,6 +247,7 @@ command :parse_trades do |c|
   c.option '--interest-income-account STRING', String, 'Ledger account to be used for interest income'
   c.option '--interest-expense-account STRING', String, 'Ledger account to be used for interest expenses'
   c.option '--ignore-deposits-withdrawals', 'If specified, don\'t output transactions for deposits and withdrawals'
+  c.option '--new-only', 'If specified, don\'t output transactions older than the latest recorded ledger transaction on the stock account'
   c.action do |args, options|
     raise ArgumentError.new("--stock-account is required") if options.stock_account.nil?
     options.default :cash_account => options.stock_account,
@@ -254,6 +277,7 @@ command :retrieve_and_parse do |c|
   c.option '--api-token STRING', String, 'Authentication token for the IBKR Flex webservice'
   c.option '--query-id STRING', String, 'Query ID of the Flex query to execute'
   c.option '--wait-seconds INT', Integer, 'Seconds to sleep between executing the query and retrieving the result (default: 5s)'
+  c.option '--new-only', 'If specified, don\'t output transactions older than the latest recorded ledger transaction on the stock account'
   c.action do |args, options|
     raise ArgumentError.new("--stock-account is required") if options.stock_account.nil?
     options.default :cash_account => options.stock_account,

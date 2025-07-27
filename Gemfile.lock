@@ -4,6 +4,7 @@ GEM
     benchmark (0.4.1)
     commander (5.0.0)
       highline (~> 3.0.0)
+    csv (3.3.5)
     erubi (1.13.1)
     highline (3.0.1)
     logger (1.7.0)
@@ -71,6 +72,7 @@ PLATFORMS
 
 DEPENDENCIES
   commander
+  csv
   nokogiri
   sorbet
   sorbet-runtime

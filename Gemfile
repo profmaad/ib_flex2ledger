@@ -6,3 +6,4 @@ gem 'tapioca', require: false, :group => [:development, :test]
 
 gem 'nokogiri'
 gem 'commander'
+gem 'csv'
