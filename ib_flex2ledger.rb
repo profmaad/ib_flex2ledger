@@ -103,7 +103,7 @@ def retrieve_flex(api_token, query_id, wait_seconds)
   STDERR.puts "done: #{reference_code}"
 
   STDERR.print "Waiting #{wait_seconds} seconds for statement to finish generating..."
-  sleep(20)
+  sleep(wait_seconds)
   STDERR.puts "done"
 
   STDERR.print "Retrieving generated statement..."
