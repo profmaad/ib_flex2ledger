@@ -346,5 +346,111 @@ def parse_trades_command(
         )
 
 
+@app.command("retrieve-and-parse")
+def retrieve_and_parse_command(
+    config_file: Annotated[str, typer.Option()],
+    wait_seconds: int = 5,
+    new_only: bool = False,
+    ignore_deposits_withdrawals: bool = False,
+) -> None:
+    config = Config.load(config_file)
+    flex = retrieve_flex(config, wait_seconds)
+    flex_report = etree.fromstring(flex)
+    parse_trades_from_flex(flex_report, new_only, ignore_deposits_withdrawals, config)
+
+
+@app.command("print-positions")
+def print_positions_command(flex_file: str, verbose: bool = False) -> None:
+    with open(flex_file, "rb") as f:
+        flex_report = etree.parse(f).getroot()
+        statement = flex_report.xpath("//FlexStatement")[0]
+        account_info = statement.xpath("AccountInformation")[0]
+        print(
+            f"Positions for {account_info.get("name")}, account {statement.get("accountId")}",
+        )
+        print(
+            f"As per {statement.get("toDate")}",
+        )
+
+    assets = statement.xpath("OpenPositions/OpenPosition[@levelOfDetail='SUMMARY']")
+    for position in assets:
+        currency = position.get("currency")
+
+        print(f"{position.get("symbol")} {position.get("position")}")
+
+        if verbose:
+            cost_basis_value = float(position.get("costBasisMoney"))
+            m2m_value = float(position.get("positionValue"))
+            m2m_return = m2m_value / cost_basis_value - 1
+            print(f" * Percent of NAV: {position.get("percentOfNAV")}%")
+            print(f" * Cost basis price: {position.get("openPrice")} {currency}")
+            print(f" * M2M price: {position.get("markPrice")} {currency}")
+            print(f" * Cost basis value : {cost_basis_value} {currency}")
+            print(f" * M2M value: {m2m_value} {currency}")
+            print(f" * M2M PnL: {position.get("fifoPnlUnrealized")} {currency}")
+            print(f" * M2M return: {m2m_return:.2%}")
+            print("")
+
+    fx = statement.xpath("FxPositions/FxPosition[@levelOfDetail='SUMMARY']")
+    for position in fx:
+        print(f"{position.get("fxCurrency")} {position.get("quantity")}")
+
+
+@app.command("dividends-to-csv")
+def dividends_to_csv_command(flex_file: str) -> None:
+    with open(flex_file, "rb") as f:
+        flex_report = etree.parse(f).getroot()
+        statement = flex_report.xpath("//FlexStatement")[0]
+        account_info = statement.xpath("AccountInformation")[0]
+        print(
+            f"Dividends for {account_info.get("name")}, account {statement.get("accountId")}",
+            file=sys.stderr,
+        )
+        print(
+            f"Period {statement.get("fromDate")} to {statement.get("toDate")}",
+            file=sys.stderr,
+        )
+
+    csv_writer = csv.DictWriter(
+        sys.stdout, fieldnames=["date", "symbol", "amount", "tax"]
+    )
+    csv_writer.writeheader()
+
+    cash_transactions = group_cash_transactions(
+        statement.xpath("CashTransactions/CashTransaction[@levelOfDetail='DETAIL']")
+    )
+    cash_transactions = sorted(cash_transactions.items(), key=lambda item: item[0][1])
+    for key, transactions in cash_transactions:
+        grouped_transactions = classify_cash_transactions_group(transactions)
+        for transaction in grouped_transactions:
+            match transaction["type"]:
+                case "dividend_with_withholding":
+                    dividend = transaction["dividend"]
+                    tax = transaction["tax"]
+
+                    amount_without_tax = float(dividend.get("amount")) + float(
+                        tax.get("amount")
+                    )
+
+                    csv_writer.writerow(
+                        {
+                            "date": dividend.get("reportDate"),
+                            "symbol": dividend.get("symbol"),
+                            "amount": amount_without_tax,
+                            "tax": -float(tax.get("amount")),
+                        }
+                    )
+                case "Dividends":
+                    dividend = transaction["transaction"]
+                    csv_writer.writerow(
+                        {
+                            "date": dividend.get("reportDate"),
+                            "symbol": dividend.get("symbol"),
+                            "amount": float(dividend.get("amount")),
+                            "tax": 0,
+                        }
+                    )
+
+
 if __name__ == "__main__":
     app()
