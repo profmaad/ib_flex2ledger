@@ -323,7 +323,7 @@ def parse_trades_from_flex(
                     print(f"")
 
 
-@app.command()
+@app.command("retrieve-flex")
 def retrieve_flex_command(
     config_file: Annotated[str, typer.Option()], wait_seconds: int = 5
 ) -> None:
@@ -331,8 +331,7 @@ def retrieve_flex_command(
     print(retrieve_flex(config, wait_seconds))
 
 
-# TODO: fix these command names
-@app.command()
+@app.command("parse-trades")
 def parse_trades_command(
     flex_file: str,
     config_file: Annotated[str, typer.Option()],
