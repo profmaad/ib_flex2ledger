@@ -6,7 +6,7 @@ from time import sleep
 import typer
 from datetime import datetime
 from collections import defaultdict
-from typing import Any
+from typing import Any, Optional
 from typing_extensions import Annotated
 from dataclasses import dataclass
 from functools import reduce
@@ -36,6 +36,9 @@ class Config:
     api_token: str
     # Query ID of the Flex query to execute
     query_id: str
+
+    # Ledger file that the retrieved transactions will be stored in
+    ledger_file: Optional[str]
 
     @classmethod
     def load(cls, config_file: str):
@@ -122,10 +125,15 @@ def classify_cash_transactions_group(transaction_group):
 app = typer.Typer()
 
 
-def get_latest_transaction_date_from_hledger(account: str) -> datetime:
+def get_latest_transaction_date_from_hledger(config: Config) -> datetime:
+    command = ["hledger", "aregister", "-O", "csv", "--date2", config.stock_account]
+
+    if config.ledger_file:
+        command += ["-f", config.ledger_file]
+
     try:
         transactions_csv = subprocess.run(
-            ["hledger", "aregister", "-O", "csv", "--date2", account],
+            command,
             capture_output=True,
             text=True,
         )
@@ -199,9 +207,7 @@ def parse_trades_from_flex(
     )
 
     if new_only:
-        latest_transaction_date = get_latest_transaction_date_from_hledger(
-            config.stock_account
-        )
+        latest_transaction_date = get_latest_transaction_date_from_hledger(config)
         print(
             f"Dropping transactions older than {latest_transaction_date}",
             file=sys.stderr,
