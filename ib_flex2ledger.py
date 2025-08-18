@@ -31,6 +31,8 @@ class Config:
     interest_income_account: str
     # Ledger expenses account to be used for interest expenses
     interest_expense_account: str
+    # Ledger equity account to use for conversions
+    equity_conversion_account: str
 
     # Authentication token for the IBKR Flex webservice
     api_token: str
@@ -69,6 +71,12 @@ def stock_trade_to_ledger(trade: dict[str, Any], config: Config) -> None:
         f'  {config.stock_account}  "{trade.get("symbol")}" {float(trade.get("quantity"))}'
     )
     print(
+        f'  {config.equity_conversion_account}  "{trade.get("symbol")}" {-float(trade.get("quantity"))}'
+    )
+    print(
+        f"  {config.equity_conversion_account}  {trade.get("currency")} {-float(trade.get("proceeds"))}"
+    )
+    print(
         f"  {config.cash_account}  {trade.get("currency")} {float(trade.get("proceeds"))}"
     )
     fees_to_ledger(trade, config)
@@ -80,6 +88,8 @@ def fx_trade_to_ledger(trade: dict[str, Any], config: Config) -> None:
 
     transaction_header(trade)
     print(f"  {config.cash_account}  {base_currency} {float(trade.get("quantity"))}")
+    print(f"  {config.equity_conversion_account}  {base_currency} {-float(trade.get("quantity"))}")
+    print(f"  {config.equity_conversion_account}  {quote_currency} {-float(trade.get("proceeds"))}")
     print(f"  {config.cash_account}  {quote_currency} {float(trade.get("proceeds"))}")
     fees_to_ledger(trade, config)
     print("")
@@ -305,12 +315,12 @@ def parse_trades_from_flex(
                         continue
                     transaction = transaction["transaction"]
 
-                    print(f"{transaction.get("reportDate")} * UNKNOWN")
+                    print(f"{transaction.get("reportDate")} * TODO")
                     print(f"  ; {transaction.get("description")}")
                     print(
                         f"  {config.cash_account}  {transaction.get("currency")} {float(transaction.get("amount"))}"
                     )
-                    print(f"  UNKNOWN_ACCOUNT")
+                    print(f"  Assets:TODO")
                     print(f"")
                 case _:
                     transaction = transaction["transaction"]
@@ -325,7 +335,7 @@ def parse_trades_from_flex(
                     if amount < 0:
                         print(f"  {config.fees_account}")
                     else:
-                        print(f"  UNKNOWN_ACCOUNT")
+                        print(f"  Assets:TODO")
                     print(f"")
 
 
