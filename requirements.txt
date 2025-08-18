@@ -1,0 +1,3 @@
+lxml>=6
+requests
+typer>=0.15
